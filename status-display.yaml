@@ -1,0 +1,263 @@
+esphome:
+  name: "status-display"
+  friendly_name: Status-Display
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+    version: recommended
+
+# Enable logging
+# logger:
+
+# Enable Home Assistant API
+# api:
+#   encryption:
+#     key: "affeAFFEaffeAFFEaffeAFFEbSd53uzrpB7Gv1kaX2Y="
+
+ota:
+  - platform: esphome
+    password: "85ff555555555936b86d451afcf4907c"
+
+wifi:
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Status-Display"
+    password: "kC666SP666Ek"
+
+captive_portal:
+
+# Local Webserver
+web_server:
+  local: true
+  version: 2
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO9
+      mode:
+        input: true
+        pullup: true
+    name: boot_button
+    on_press:
+      - display.page.show_next: display1
+      - light.turn_on:
+          id: status_led
+          brightness: 100%
+          red: 100%
+          green: 0%
+          blue: 0%
+
+light:
+  - platform: esp32_rmt_led_strip
+    rgb_order: RGB
+    pin: GPIO10
+    num_leds: 1
+    rmt_channel: 0
+    chipset: ws2812
+    id: status_led
+    name: "Status LED"
+
+# curl "http://192.168.10.216/number/cpu_load_1/set?value=$(cat /proc/loadavg | cut -d' ' -f1)"
+# curl "http://192.168.10.216/number/cpu_load_5/set?value=$(cat /proc/loadavg | cut -d' ' -f2)"
+# curl "http://192.168.10.216/number/cpu_load_15/set?value=$(cat /proc/loadavg | cut -d' ' -f3)"
+# curl "http://192.168.10.216/number/cpu_temp/set?value=$(( $(cat /sys/class/thermal/thermal_zone0/temp) / 1000 ))"
+
+# total_mem=$(free -g | awk '/Mem:/ {print $2}')
+# used_mem=$(free -g | awk '/Mem:/ {print $3}')
+# curl "http://192.168.10.216/number/total_mem/set?value=$total_mem"
+# curl "http://192.168.10.216/number/used_mem/set?value=$used_mem"
+
+number:
+  - platform: template
+    name: "CPU LOAD 1"
+    id: cpu_load_1
+    optimistic: true
+    min_value: 0
+    max_value: 100
+    initial_value: 0
+    step: 0.1
+    set_action:
+      lambda: |-
+        id(cpu_load_1_sens).publish_state(x);
+  - platform: template
+    name: "CPU LOAD 5"
+    id: cpu_load_5
+    optimistic: true
+    min_value: 0
+    max_value: 100
+    initial_value: 0
+    step: 0.1
+    set_action:
+      lambda: |-
+        id(cpu_load_5_sens).publish_state(x);
+  - platform: template
+    name: "CPU LOAD 15"
+    id: cpu_load_15
+    optimistic: true
+    min_value: 0
+    max_value: 100
+    initial_value: 0
+    step: 0.1
+    set_action:
+      lambda: |-
+        id(cpu_load_15_sens).publish_state(x);
+  - platform: template
+    name: "CPU Temp"
+    id: cpu_temp
+    optimistic: true
+    min_value: 0
+    max_value: 160
+    initial_value: 0
+    step: 0.1
+  - platform: template
+    name: "total mem"
+    id: total_mem
+    optimistic: true
+    min_value: 0
+    max_value: 999
+    initial_value: 30
+    step: 0.1
+  - platform: template
+    name: "used mem"
+    id: used_mem
+    optimistic: true
+    min_value: 0
+    max_value: 999
+    initial_value: 8
+    step: 0.1
+    
+sensor:
+  - platform: uptime
+    type: seconds
+    name: Uptime Sensor
+    id: uptimesensor
+    update_interval: 1s
+  - platform: template
+    id: cpu_load_1_sens
+    name: "CPU load 1"
+  - platform: template
+    id: cpu_load_5_sens
+    name: "CPU load 5"
+  - platform: template
+    id: cpu_load_15_sens
+    name: "CPU load 15"
+
+# Various ways to configure fonts
+font:
+  - file: "gfonts://Roboto"
+    id: roboto
+    size: 18
+    bpp: 4
+  - file: "gfonts://Material+Symbols+Outlined"
+    id: icons
+    size: 18
+    bpp: 1
+    glyphs: [
+      "\U0000e846", # thermometer
+      "\U0000e322", # CPU
+      "\U0000f7a3", # Memory
+      "\U0000e1db", # Storage
+      "\U0000eb66", # Performance Chart
+      ]
+
+spi:
+  clk_pin: GPIO6
+  mosi_pin: GPIO7
+
+interval:
+  - interval: 5s
+    then:
+      - display.page.show_next: display1
+      - component.update: display1
+
+substitutions:
+  display_values_center_offset: "74"
+
+display:
+  - platform: ssd1351_spi
+    id: display1
+    model: "SSD1351 128x128"
+    reset_pin: GPIO05
+    cs_pin: GPIO4
+    dc_pin: GPIO8
+    pages:
+      - id: page1
+        lambda: |-
+          it.print(0, 0, id(icons), "\U0000e322");
+          it.printf(${display_values_center_offset}, 1, id(roboto), my_green, TextAlign::TOP_CENTER, "%.0f °C", id(cpu_temp).state);
+
+          it.print(0, 18, id(icons), "\U0000f7a3");
+          it.printf(${display_values_center_offset}, 18, id(roboto), my_green, TextAlign::TOP_CENTER, "%2.0f/%2.0f GB", id(used_mem).state, id(total_mem).state);
+
+          it.print(0, 36, id(icons), "\U0000e1db");
+          it.printf(${display_values_center_offset}, 36, id(roboto), my_green, TextAlign::TOP_CENTER,  "%1.1f/2 TB", 1.1);
+
+          it.print(0, 54, id(icons), "\U0000eb66");
+          it.printf(${display_values_center_offset}, 54, id(roboto), my_yellow, TextAlign::TOP_CENTER,  "%1.1f %1.1f %1.1f", id(cpu_load_1).state, id(cpu_load_5).state, id(cpu_load_15).state);
+          it.graph(0, 80, id(multi_temperature_graph));
+      - id: page2
+        lambda: |-
+          it.graph(0, 0, id(multi_temperature_graph_full));
+
+graph:
+  - id: multi_temperature_graph
+    duration: 1h
+    x_grid: 10min
+    y_grid: 1.0     # degC/div
+    width: 128
+    height: 48
+    traces:
+      - sensor: cpu_load_1_sens
+        line_type: DASHED
+        line_thickness: 2
+        color: my_red
+      - sensor: cpu_load_5_sens
+        line_type: SOLID
+        continuous: true
+        line_thickness: 3
+        color: my_blue
+      - sensor: cpu_load_15_sens
+        line_type: DOTTED
+        line_thickness: 2
+        color: my_green
+  - id: multi_temperature_graph_full
+    duration: 1h
+    x_grid: 10min
+    y_grid: 1.0     # degC/div
+    width: 128
+    height: 128
+    traces:
+      - sensor: cpu_load_1_sens
+        line_type: DASHED
+        line_thickness: 2
+        color: my_red
+      - sensor: cpu_load_5_sens
+        line_type: SOLID
+        continuous: true
+        line_thickness: 3
+        color: my_blue
+      - sensor: cpu_load_15_sens
+        line_type: DOTTED
+        line_thickness: 2
+        color: my_yellow
+
+color:
+  - id: my_red
+    red: 100%
+    green: 0%
+    blue: 0%
+  - id: my_green
+    red: 0%
+    green: 100%
+    blue: 0%
+  - id: my_blue
+    red: 0%
+    green: 0%
+    blue: 100%
+  - id: my_yellow
+    red: 100%
+    green: 100%
+    blue: 0%
